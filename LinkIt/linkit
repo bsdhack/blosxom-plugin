@@ -1,0 +1,146 @@
+# Blosxom Plugin: linkit
+#
+# All rights reserved, copyright (c) 2008,2017 Mitzyuki IMAIZUMI
+# Author: Mitzyuki IMAIZUMI (mitz@mitz.jp)
+# Version: 2017-01-13
+
+# linkit
+#
+# Turns square-bracketed image/url references into simple html markup
+#   * Can exist in any part of story body
+#   * image/html root is configurable
+#   * sets simple 'alt' tag automaticaly
+#
+# Usage Examples:
+# 
+#   [name.jpg caption]  Make `img' tag with 'alt' which is 'Image: name.jpg',
+#   with make thumbnail image with imagemagic.
+#   [url description] Make `a' tag with 'description'. If descriptions
+#   is not set, use url to description.
+#   [name.mov width]  Make `video' tag with specified width'.
+#   
+
+package linkit;
+
+# Configuration Section
+my @picture = ('jpg', 'jpeg', 'gif', 'png');
+my @movie = ('mov');
+my $imagedir = "/entries/images/";							# the base image url
+my $class = "snapimg";
+my $imgclass = "images";
+
+my $prefix = 'thm_';
+my $size = 240;
+
+#-------------------------------------------------------------------------------
+# Main Routine
+
+use Image::Magick;
+
+sub start {
+
+	return 1;
+
+}
+
+sub story {
+
+	my ($pkg, $path, $file, $story, $title, $body) = @_;
+
+	$$body = do_html(do_image($$body, $file));
+
+	1;
+
+}
+
+
+sub do_image {
+
+	my ($line, $file) = @_;
+	my $ext = join("|", (@picture, @movie));
+
+	$line =~ s/\[([\/\w\-\!\#\$\%\'\^\(\)\{\}\~]+)\.($ext)( [^]]*)*\]/image($1, $2, $3, $file)/gies;
+
+	return($line);
+
+}
+
+sub	image {
+
+	my ($name, $ext, $cap, $file) = @_;
+	my $pict  = join("|", @picture);
+	my $mov  = join("|", @movie);
+	my $thum;
+
+	if($ext =~ m/($pict)/i ) {
+		($thum = $name) =~ s!^/*(.*/)*(.*)!$imagedir$1$prefix$2\.$ext!;
+		unless (-f "./$thum"){
+			my $magic = Image::Magick->new;
+
+			$magic->Read("./$imagedir/$name.$ext");
+			$magic->Scale(geometry=>"$size x $size");
+			$magic->Write("./$thum");
+		}
+
+		if($cap =~ s/^\s+(.+)/\1/){
+			$cap = sprintf("<div class='caption'>%s</div>\n", $cap);
+		}
+
+		return(sprintf(
+				"<div class='%s'>\n" .
+				"	<div class='%s'>\n" .
+				"		<a href='%s/%s.%s' rel='lightbox[%s]'>" .
+				"<img src='%s' alt='Image: %s.%s'></a>\n" .
+				"	</div>\n" .
+				"</div>\n".
+				"<br clear='all'>\n%s",
+				$class, $imgclass,
+				$imagedir, $name, $ext, $file,
+				$thum, $name, $ext, $cap));
+
+	}
+	elsif($ext =~ m/($mov)/i ) {
+		if($cap =~ s/^\s+(.+)/\1/){
+			$cap = sprintf("width = '%s'", $cap);
+		}
+
+		return(sprintf(
+				"<div class='%s'>\n" .
+				"	<div class='%s'>\n" .
+				"		<video controls %s>\n" .
+				"			<source src='%s/%s.%s'>\n" .
+				"		</video>\n" .
+				"	</div>\n" .
+				"</div>\n".
+				"<br clear='all'>\n",
+				$class, $imgclass, $cap,
+				$imagedir, $name, $ext));
+
+	}
+
+	return(0);
+
+}
+
+sub	do_html {
+
+	my ($line) = @_;
+
+	$line =~ s/\[(https?:\/\/)(\S*)( [^]]*)*\]/html($1, $2, $3)/gies;
+
+	return($line);
+
+}
+
+sub	html {
+
+	my ($proto, $url, $anc) = @_;
+
+	$anc =~ s/^ //;
+
+	return(sprintf("<a href='%s%s' target='_blank'>%s</a>",
+		$proto, $url, $anc ? $anc : $url));
+
+}
+
+1;
