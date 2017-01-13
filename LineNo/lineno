@@ -1,0 +1,151 @@
+# Blosxom Plugin: lineno
+#
+# All rights reserved, copyright (c) 2012, Mitzyuki IMAIZUMI
+# Author: Mitzyuki IMAIZUMI (mitz@mitz.jp)
+# Version: 2012-06-21
+#
+
+# lineno
+#	for source code (c, sh, php, xml, exrc)
+#		<source[ lang='LANGUAGE'][ include='FILE']>...</source>
+#			add lineno, comment to italic
+#
+#	for file content(s)
+#		<file[ lang='LANGUAGE'][ include='FILE']>...</source>
+#			comment to italic
+#
+#	for command line(s)
+#		<code[ prompt='PROMPT'][ include='FILE']>...</code>
+#			prompt/output to italic
+#
+#	also
+#		expand tab to spaces
+#		escape special characters
+#
+
+package lineno;
+
+# Configuration Section
+my	$begin		= qq(<span class='comment'>);
+my	$end		= qq(</span>);
+my	$css		= qq(lineno);
+
+my	%start		= qw(c \/\* xml &lt;!-);
+my	%stop		= qw(c \*\/ xml -&gt;);
+my	%line1		= qw(c \/\/);
+my	%line2		= qw(sh # php # exrc ");
+
+	$tabstop	= 4;
+
+#--------------#
+# Main Routine 3
+#--------------#
+
+use	strict;
+use	Text::Tabs;
+
+sub start {
+
+	return 1;
+
+}
+
+sub story {
+
+	my ($pkg, $path, $file, $story, $title, $body) = @_;
+
+	$$body = do_line($$body);
+
+	1;
+
+}
+
+sub do_line {
+
+	my($line, $no, $tag, $lang, $prompt, $flag) = @_;
+	my(@lines) = split(/\n/, $line);
+	my($buff);
+
+	foreach $line (@lines){
+		if($flag){
+			# expand tabstop
+			$line = expand($line);
+
+			if($line =~ s/<\/$tag>/<\/pre>/){
+				$flag = 0;
+				$lang = $tag = undef;
+			}
+			else{
+				# replace entities
+				$line =~ s/(^|([^\\]))&/$1&amp;/g;
+				$line =~ s/(^|([^\\]))</$1&lt;/g;
+				$line =~ s/(^|([^\\]))>/$1&gt;/g;
+				$line =~ s/\\([&<>])/$1/g;
+
+				# CODE
+				if($tag =~ /code/){
+					# prompt to italic
+					if(!($line =~ s/^([\$\#])(\s+)/$begin$1$end$2/)){
+						if($prompt){
+							if(!($line =~ s/^($prompt)(\s+)/$begin$1$end$2/)){
+								$line =~ s/(.*)/$begin$1$end/;
+							}
+						}
+						else {
+							$line =~ s/(.*)/$begin$1$end/;
+						}
+					}
+				}
+
+
+				# SOURCE/FILE
+				else {
+					if($line1{$lang}){
+						$line =~ s/($line1{$lang}.*)/$begin$1$end/;
+					}
+					if($line2{$lang}){
+						$line =~ s/(^|\s+)($line2{$lang}.*)/$1$begin$2$end/;
+					}
+					if($start{$lang}){
+						$line =~ s/($start{$lang})/$begin$1/g;
+						$line =~ s/($stop{$lang})/\1$end/g;
+					}
+
+					# lineno
+					if($tag =~ /source/){
+						$buff .= sprintf("<span class='%s'>%3d</span>",
+										$css, ++$$no);
+					}
+				}
+			}
+		}
+
+		else{
+			if($line =~ s/<(source|file|code)(?:\s+(?:lang|prompt)=['"]([^'"]*)['"])?(?:\s+include=['"]([^'"]*)['"])?\s*>/<pre class='$1'>/){
+				my($file) = $3;
+
+				$$no = 0;
+				$flag = 1;
+
+				$tag = $1;
+				$lang = $2 ? $2 : "c";
+				$prompt = $2;
+
+				if($file){
+					if(open(FP, $file)){
+						($line .= do_line(join("", <FP>),
+								$no, $tag, $lang, $prompt, $flag)) =~ s/\n$//;
+					}
+				}
+			}
+		}
+
+		$buff .= "$line\n";
+
+	}
+
+	return($buff)
+
+}
+
+1;
